@@ -199,6 +199,7 @@ def move_file(target_dir: str, photo_dir_path: str, order: Order, photofile: Pho
     original_img_path = os.path.join(photo_dir_path, photo_filename) # get the path where the image is right now
     product = photofile.product
     if product in PRODUCT_NAME_TRANSLATIONS: product = PRODUCT_NAME_TRANSLATIONS[product]
+    
 
     ### Determine the destination directory of files, and change the photo_filename if needed. Up to date algorithm here ###
     # Special cases first
@@ -207,7 +208,7 @@ def move_file(target_dir: str, photo_dir_path: str, order: Order, photofile: Pho
             destination_dir = os.path.join(target_dir, 'Anderson Geographics', TIF_FOLDER_NAME if photofile.ext == 'tif' else JPG_FOLDER_NAME)
             photo_filename = f'{photofile.date}_{order.field_name}_{photofile.product}.{photofile.ext}'
         else:
-            destination_dir = os.path.join(target_dir, order.customer, '3 Mile', order.manager, order.crop, product)
+            destination_dir = os.path.join(target_dir, order.customer.replace('_',' '), '3 Mile', order.manager, order.crop, product)
             if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, TIF_FOLDER_NAME)
     elif (order.customer == 'Agri_NW' or order.customer == 'Washington_Onion' or order.customer == 'Paterson_Ferry') and photofile.ext == 'tif':
         destination_dir = os.path.join(target_dir, 'Agri Server', order.farm.replace('_',' '))
@@ -219,11 +220,12 @@ def move_file(target_dir: str, photo_dir_path: str, order: Order, photofile: Pho
     else: # Not a special case
         destination_dir = os.path.join(target_dir, order.customer.replace('_',' '), order.farm.replace('_',' '), order.manager, order.crop, product)
         if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, TIF_FOLDER_NAME)
+        
     
     ### Now that destination_dir is determined, move the file ###
-    destination = os.path.join(destination_dir, photo_filename)
+    destination = os.path.join(destination_dir, photo_filename) # destination is the destination directory + filename
 
-    if os.path.exists(destination): # Create a modified name if the name already exists in the destination directory
+    if os.path.exists(destination): # if the name already exists in the destination directory, create a modified name 
         print(f'File already exists: {photo_filename} already exists in {destination_dir}. Giving a modifier "name_conflict_" to begining of file name')
         photo_filename = f'name_conflict_{photo_filename}'
         destination = os.path.join(destination_dir, photo_filename)
