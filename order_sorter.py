@@ -1,5 +1,4 @@
 # Order sorter by Duncan Reeves
-# Modified sorter based on a sorter by Dallin Hutchison
 # File runs a gui and lets you select an order form, a destination folder, and a source folder
 	# filenames in the source folder should be in the format [Date]_[Customer]_[Farm]_[FieldName]_[Product].[extension]. An '_' is also used within attribute names if there are spaces inside of them
 # When run, the order form will be read and transfer files from the source folder, to the destination folder, based on the order form
@@ -176,11 +175,39 @@ def extract_orders_from_order_form(order_form_path: str) -> list:
 	
 	return orders
 
-def move_file(target_dir: str, photo_dir_path: str, order: Order, photofile: PhotoFile):
+def move_file(file_to_move:str, destination_dir:str, filename:str, copy:bool = False):
 	'''
-	Move file according to instructions
+	Move or copy the file (file_to_move), to the destination directory, as the given filename
 	- Determine the destination directory (up to date algorithm goes here), and new name (if applicable); from the order and filename information
-	- Move the file to the destination directory
+	- Move/copy the file to the destination directory
+
+	Parameters:
+		file_to_move (str, PathLike): Path to the file that will be moved
+		destination_dir (str, PathLike): Path to the destination directory
+		filename (str): What to name the file when it's moved
+		copy (bool): Determines to copy or move the file
+	'''
+	### Now that destination_dir is determined, move the file ###
+	destination = os.path.join(destination_dir, filename) # destination is the destination directory + filename
+
+	if os.path.exists(destination): # if the name already exists in the destination directory, create a modified name 
+		print(f'File already exists: {filename} already exists in {destination_dir}. Giving a modifier "name_conflict_" to begining of file name')
+		filename = f'name_conflict_{filename}'
+		destination = os.path.join(destination_dir, filename)
+
+	if not os.path.exists(destination_dir):
+		os.makedirs(destination_dir) # Ensure the parent directories to the destination exist
+	
+	if copy:
+		shutil.copy2(file_to_move, destination)
+	else:
+		shutil.move(file_to_move, destination)
+
+def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: PhotoFile):
+	'''
+	Process file according to instructions
+	- Determine the destination directory (up to date algorithm goes here), and new name (if applicable); from the order and filename information
+	- Move/copy the file to the destination directory
 
 	Parameters:
 		target_dir (str, PathLike): Path to the target directory
@@ -207,13 +234,19 @@ def move_file(target_dir: str, photo_dir_path: str, order: Order, photofile: Pho
 
 	### Determine the destination directory of files, and change the photo_filename if needed. Up to date algorithm here ###
 	# Special cases first
-	if order.customer == 'RD Offutt':
-		if order.farm != 'Inland':
-			destination_dir = os.path.join(target_dir, 'Anderson Geographics', TIF_FOLDER_NAME if photofile.ext == 'tif' else JPG_FOLDER_NAME)
-			photo_filename = f"{photofile.date}_{order.field_name.replace(' ','_')}_{photofile.product}.{photofile.ext}"
-		else:
-			destination_dir = os.path.join(target_dir, order.customer, '3 Mile', order.manager, order.crop, product)
-			if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, TIF_FOLDER_NAME)
+	# TODO Offutt
+	# # inland is renamed to 3 Mile, no other special stuff
+	# Everything goes to Anderson Geographics
+	# JPGs go to RD offutt (regular custoer, farm, manager, crop, product)
+
+	if order.customer == 'RD Offutt': # Everything goes to Anderson Geographics, JPGs also go to RD Offutt
+		if photofile.ext == 'jpg': # Copy JPGs to RD Offutt
+			farm = '3 Mile' if order.farm == 'Inland' else order.farm
+			destination_dir = os.path.join(target_dir, order.customer, farm, order.manager, order.crop, product)
+			move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename, copy = True)
+		
+		destination_dir = os.path.join(target_dir, 'Anderson Geographics', TIF_FOLDER_NAME if photofile.ext == 'tif' else JPG_FOLDER_NAME)
+		photo_filename = f"{photofile.date}_{order.field_name.replace(' ','_')}_{photofile.product}.{photofile.ext}"
 	elif (order.customer == 'Agri NW' or order.customer == 'Washington Onion' or order.customer == 'Paterson Ferry') and photofile.ext == 'tif':
 		destination_dir = os.path.join(target_dir, 'Agri Server', order.farm)
 	elif order.customer == 'Canyon falls':
@@ -225,20 +258,10 @@ def move_file(target_dir: str, photo_dir_path: str, order: Order, photofile: Pho
 		destination_dir = os.path.join(target_dir, order.customer, order.farm, order.manager, order.crop, product)
 		if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, TIF_FOLDER_NAME)
 		
-	
 	### Now that destination_dir is determined, move the file ###
-	destination = os.path.join(destination_dir, photo_filename) # destination is the destination directory + filename
+	move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename)
 
-	if os.path.exists(destination): # if the name already exists in the destination directory, create a modified name 
-		print(f'File already exists: {photo_filename} already exists in {destination_dir}. Giving a modifier "name_conflict_" to begining of file name')
-		photo_filename = f'name_conflict_{photo_filename}'
-		destination = os.path.join(destination_dir, photo_filename)
-
-	if not os.path.exists(destination_dir):
-		os.makedirs(destination_dir) # Ensure the parent directories to the destination exist
-	shutil.move(original_img_path, destination)
-
-def process_orders(order_form_path: str, photo_dir_path: str, target_dir: str) -> Tuple[int, str]:
+def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir:str) -> Tuple[int, str]:
 	'''
 	Parses the order form, and searches the photo directory for matches. Processes matches, and creates a CSV of unfulfilled orders, if any (orders with no matches). Returns list of unfulfilled orders and the number of files that were moved
 	- Create a list of orders from the order form
@@ -262,34 +285,33 @@ def process_orders(order_form_path: str, photo_dir_path: str, target_dir: str) -
 	photo_filenames = [PhotoFile(fname) for fname in os.listdir(photo_dir_path) if os.path.isfile(os.path.join(photo_dir_path, fname))] # A list of PhotoFiles for filenames which should be in the format [Date]_[Customer]_[Farm]_[FieldName]_[Product].[extension]. An '_' is also used within customer/farm names if there are multiple words in those names, instead of spaces
 
 	unfulfilled_orders = [] # Keep track of any orders that didn't have any matching files to move
-	moved_files = [] # Keep track of what files have been moved, to catch if duplicate files are attempting to be moved
+	processed_files = [] # Keep track of what files have been moved, to catch if duplicate files are attempting to be moved
 	for order in orders: # For every order, search the filenames for matching files, and move them
 		found_match = False
 		for photofile in photo_filenames:
 			if photofile.matches_order(order):
-				if photofile.filename in moved_files:
+				if photofile.filename in processed_files:
 					raise DataException(f'Error. Attempt to move an already moved file.\nOrder: {order}\nAttempted to move the file {photofile.filename}, which has already been moved.')
 				else:
-					moved_files.append(photofile.filename)
 					found_match = True
-					move_file(target_dir, photo_dir_path, order, photofile)
+					process_file(target_dir, photo_dir_path, order, photofile)
+					processed_files.append(photofile.filename)
 		if not found_match:
 			# raise DataException(f'Error. No matching file found.\nAn order did not find a matching file to move: {order}')
 			unfulfilled_orders.append(order.to_csv_format())
 	
-	return (len(moved_files), str.join('\n',unfulfilled_orders))
+	return (len(processed_files), str.join('\n',unfulfilled_orders))
 
-# Entry function called by main
 def attempt_process(
-	target_selection: FolderFileSelect,
-	photo_selection: FolderFileSelect,
-	order_form_selection: FolderFileSelect,
-) -> None:
+	target_selection:FolderFileSelect,
+	photo_selection:FolderFileSelect,
+	order_form_selection:FolderFileSelect,
+) -> None:# Entry function called by main
 	'''
 	Attemps to process the order, and handles errors that occur in the process.
 	- Checks the validity of the selections, returning if invalid
 	- Attempts to fulfill the orders
-		-- Call "process_orders"
+		-- Call "parse_and_process_orders"
 			-- Reads the order form (order_form_selection), and process each order from photos inside the photo directory (photo_selection)
 			-- Returns the number of photos moved
 	- Displays results from attempting to fulfill the orders
@@ -326,7 +348,7 @@ def attempt_process(
 
 	# Try to move the image files, display results and handle relevant exceptions/errors
 	try:
-		files_moved, unfulfilled_orders = process_orders(order_form_path, photo_path, target_path)
+		files_moved, unfulfilled_orders = parse_and_process_orders(order_form_path, photo_path, target_path)
 
 		if files_moved == 0:
 			tk.messagebox.showerror("No files moved.", "No matching files were found using the given order form and photo folder.")
