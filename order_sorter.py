@@ -8,8 +8,9 @@ import shutil
 import csv
 import tkinter as tk
 from tkinter import filedialog, ttk
-from typing import Tuple, List
 import sys
+import datetime
+# from typing import Tuple, List
 
 # Filename variables
 TIF_FOLDER_NAME, JPG_FOLDER_NAME = "GeoTiff", "JPG"
@@ -146,6 +147,22 @@ class DataException(Exception):
 	"""Custom exception class."""
 	pass
 
+def write_logfile(location:str, content:str, name:str = f"logfile_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", warning:str = None):
+	'''
+	Writes a logfile at the given location, with the given content and filename
+	The name of the logfile is optional. If left unspecified it will be "logfile_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}"
+
+	Parameters:
+		location (str, PathLike): Path to where the error log will be created.
+		content (string or string castable): content will be directly written to the file
+		name (str): Optional variable to specify the name of the error log. By default it will be "logfile_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}"
+		warning (str): Warning to show via the GUI that a logfile was created
+	'''
+	filename =  os.path.join(location, name)
+	with open(filename, 'a') as file:
+		file.write(content)
+	if warning is not None: tk.messagebox.showerror(f"Log file {name} created at {location}", warning)
+
 def extract_orders_from_order_form(order_form_path: str) -> list:
 	'''
 	Reads the order form and returns a list of Order objects, detailing what the order form wanted
@@ -261,9 +278,9 @@ def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: Ph
 	### Now that destination_dir is determined, move the file ###
 	move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename)
 
-def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir:str) -> Tuple[int, str]:
+def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir:str) -> int:
 	'''
-	Parses the order form, and searches the photo directory for matches. Processes matches, and creates a CSV of unfulfilled orders, if any (orders with no matches). Returns list of unfulfilled orders and the number of files that were moved
+	Parses the order form, and searches the photo directory for matches. Processes matches, and creates a CSV of unfulfilled orders, if any (orders with no matches). Returns list of unfulfilled orders and the number of files that were moved TODO
 	- Create a list of orders from the order form
 	- Create a list of photo filenames in the photo directory
 	- For every order, find the photo filename(s) from the list that match, and process them
@@ -282,25 +299,40 @@ def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir
 		DataException: If the photo files don't meet order form specifications (duplicates, no matching files, etc)
 	'''
 	orders = extract_orders_from_order_form(order_form_path) # A list of Order objects, representing the orders from the order form
-	photo_filenames = [PhotoFile(fname) for fname in os.listdir(photo_dir_path) if os.path.isfile(os.path.join(photo_dir_path, fname))] # A list of PhotoFiles for filenames which should be in the format [Date]_[Customer]_[Farm]_[FieldName]_[Product].[extension]. An '_' is also used within customer/farm names if there are multiple words in those names, instead of spaces
+	photo_files = [PhotoFile(fname) for fname in os.listdir(photo_dir_path) if os.path.isfile(os.path.join(photo_dir_path, fname))] # A list of PhotoFile objects, for the filenames in the photo_dir_path
 
-	unfulfilled_orders = [] # Keep track of any orders that didn't have any matching files to move
-	processed_files = [] # Keep track of what files have been moved, to catch if duplicate files are attempting to be moved
-	for order in orders: # For every order, search the filenames for matching files, and move them
+	# Error checking variables
+	unfulfilled_orders = [] # Keep track of any orders that didn't have any matching files to move TODO
+	processed_files = {} # Keep track of what files have been moved, to catch if multiple orders are attempting to move the same files. processed_files: keys = the filename, values = a list of corresponding orders that match that file.
+
+	for order in orders: # For every order, search the filenames for matching files, and process them
 		found_match = False
-		for photofile in photo_filenames:
+		for photofile in photo_files:
 			if photofile.matches_order(order):
-				if photofile.filename in processed_files:
-					raise DataException(f'Error. Attempt to move an already moved file.\nOrder: {order}\nAttempted to move the file {photofile.filename}, which has already been moved.')
-				else:
+				if photofile.filename not in processed_files:
 					found_match = True
-					process_file(target_dir, photo_dir_path, order, photofile)
-					processed_files.append(photofile.filename)
+					process_file(target_dir, photo_dir_path, order, photofile) # TODO handle errors in moving
+					processed_files[photofile.filename] = [order] # list the processed file alongside the order that processed it
+				else: # file has already been processed by another order
+					processed_files[photofile.filename].append(order) # Add the order that tried to process an already processed file
 		if not found_match:
-			# raise DataException(f'Error. No matching file found.\nAn order did not find a matching file to move: {order}')
 			unfulfilled_orders.append(order.to_csv_format())
 	
-	return (len(processed_files), str.join('\n',unfulfilled_orders))
+	# Write out all unfulfilled orders to it's own file
+	if len(unfulfilled_orders) > 0: write_logfile(location=target_dir, name=f"Unfulfilled_orders_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content='\n'.join(unfulfilled_orders), warning='Unfulfilled Orders')
+	
+	# Notify if there were multiple orders that matched to the same file
+	order_message = ''
+	for filename in processed_files:
+		if len(processed_files[filename]) > 1: # If multiple orders match to the file
+			order_message += f'The file {filename} was matched by multiple different orders. The following orders matched with the file:\n'
+			for order in processed_files[filename]:
+				order_message += f'\t{order}\n'
+	if len(order_message) > 0:
+		write_logfile(location=target_dir, name=f"Order_duplicates_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content=order_message, warning='Duplicate orders present: Inidividual files were matched with muiltiple orders')
+	
+
+	return len(processed_files)
 
 def attempt_process(
 	target_selection:FolderFileSelect,
@@ -348,7 +380,7 @@ def attempt_process(
 
 	# Try to move the image files, display results and handle relevant exceptions/errors
 	try:
-		files_moved, unfulfilled_orders = parse_and_process_orders(order_form_path, photo_path, target_path)
+		files_moved = parse_and_process_orders(order_form_path, photo_path, target_path)
 
 		if files_moved == 0:
 			tk.messagebox.showerror("No files moved.", "No matching files were found using the given order form and photo folder.")
