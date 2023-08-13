@@ -293,7 +293,7 @@ def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: Ph
 		photo_filename = f"{photofile.date}_{order.field_name.replace(' ','_')}_{photofile.product}.{photofile.ext}"
 	elif (order.customer == 'Agri NW' or order.customer == 'Washington Onion' or order.customer == 'Paterson Ferry') and photofile.ext == 'tif':
 		destination_dir = os.path.join(target_dir, 'Agri Server', order.farm)
-	elif order.customer == 'Canyon falls':
+	elif order.customer == 'Canyon Falls':
 		if photofile.ext == 'tif':
 			destination_dir = os.path.join(target_dir, 'Canyon Falls Server')
 		else:
