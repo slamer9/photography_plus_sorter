@@ -160,7 +160,7 @@ def write_logfile(location:str, content:str, name:str = f"logfile_{datetime.now(
 	filename =  os.path.join(location, name)
 	with open(filename, 'a') as file:
 		file.write(content)
-	if warning is not None: tk.messagebox.showerror(f"Log file {name} created at {location}", warning)
+	if warning is not None: tk.messagebox.showerror(warning, f"Log file {name} created at {location}")
 
 def handle_edge_cases(unfulfilled_orders:list, processed_files:dict, target_dir:str):
 	'''
@@ -177,7 +177,7 @@ def handle_edge_cases(unfulfilled_orders:list, processed_files:dict, target_dir:
 	# Write out all unfulfilled orders to it's own file
 	if len(unfulfilled_orders) > 0:
 		unfulfilled_orders.insert(0, Order.CSV_HEADER) # Add a header to the list of unfulfilled orders, so it's a readable CSV
-		write_logfile(location=target_dir, name=f"Unfulfilled_orders_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content='\n'.join(unfulfilled_orders), warning='Unfulfilled Orders')
+		write_logfile(location=target_dir, name=f"Unfulfilled_orders_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv", content='\n'.join(unfulfilled_orders), warning='Unfulfilled Orders')
 	
 	# Notify if there were multiple orders that matched to the same file
 	order_message = ''
@@ -297,7 +297,7 @@ def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: Ph
 		if photofile.ext == 'tif':
 			destination_dir = os.path.join(target_dir, 'Canyon Falls Server')
 		else:
-			destination_dir = os.path.join(target_dir, order.customer, order.manager, order.crop, product)
+			destination_dir = os.path.join(target_dir, order.customer, order.manager, order.farm, order.crop, product)
 	else: # Not a special case
 		destination_dir = os.path.join(target_dir, order.customer, order.farm, order.manager, order.crop, product)
 		if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, TIF_FOLDER_NAME)
