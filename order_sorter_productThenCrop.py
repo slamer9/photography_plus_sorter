@@ -299,7 +299,7 @@ def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: Ph
 		else:
 			destination_dir = os.path.join(target_dir, order.customer, order.manager, order.farm, product, order.crop)
 	else: # Not a special case
-		destination_dir = os.path.join(target_dir, order.customer, order.farm, order.manager, order.crop, product)
+		destination_dir = os.path.join(target_dir, order.customer, order.farm, order.manager, product, order.crop)
 		if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, TIF_FOLDER_NAME)
 		
 	### Now that destination_dir is determined, move the file ###
