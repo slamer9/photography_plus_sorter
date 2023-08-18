@@ -275,35 +275,14 @@ def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: Ph
 		-- Subfields can also have underscores '_' in them (ie, if the customer is two words then they will be separated by '_')
 	- The order form is a csv, where every row is an order with the format: pk, FieldName, Crop, Customer, Farm, Variety, Manager, Zone, Acres, Region, Product (only FieldName, Crop, Customer, Farm, and Manager are used by the current algorithm)
 	'''
-	### Get relevant information from the photo_filename ###
-	photo_filename = photofile.filename
-	original_img_path = os.path.join(photo_dir_path, photo_filename) # get the path where the image is right now
-	product = photofile.product
-	if product in PRODUCT_NAME_TRANSLATIONS: product = PRODUCT_NAME_TRANSLATIONS[product]
-	
+	### Determine the destination directory of files ###
+	if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, 'Tiff')
+	elif photofile.ext == 'jpg': destination_dir = os.path.join(destination_dir, 'JPG')
 
-	### Determine the destination directory of files, and change the photo_filename if needed. Up to date algorithm here ###
-	if order.customer == 'RD Offutt': # Everything goes to Anderson Geographics, JPGs also go to RD Offutt
-		if photofile.ext == 'jpg': # Copy JPGs to RD Offutt
-			farm = '3 Mile' if order.farm == 'Inland' else order.farm
-			destination_dir = os.path.join(target_dir, order.customer, farm, order.manager, order.crop, product)
-			move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename, copy = True)
-		
-		destination_dir = os.path.join(target_dir, 'Anderson Geographics', TIF_FOLDER_NAME if photofile.ext == 'tif' else JPG_FOLDER_NAME)
-		photo_filename = f"{photofile.date}_{order.field_name.replace(' ','_')}_{photofile.product}.{photofile.ext}"
-	elif (order.customer == 'Agri NW' or order.customer == 'Washington Onion' or order.customer == 'Paterson Ferry') and photofile.ext == 'tif':
-		destination_dir = os.path.join(target_dir, 'Agri Server', order.farm)
-	elif order.customer == 'Canyon Falls':
-		if photofile.ext == 'tif':
-			destination_dir = os.path.join(target_dir, 'Canyon Falls Server')
-		else:
-			destination_dir = os.path.join(target_dir, order.customer, order.manager, order.farm, product, order.crop)
-	else: # Not a special case
-		destination_dir = os.path.join(target_dir, order.customer, order.farm, order.manager, product, order.crop)
-		if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, TIF_FOLDER_NAME)
+	destination_dir = os.path.join(destination_dir, order.crop)
 		
 	### Now that destination_dir is determined, move the file ###
-	move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename)
+	move_file(file_to_move=os.path.join(photo_dir_path, photofile.filename), destination_dir=destination_dir, filename=photofile.filename)
 
 def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir:str) -> int:
 	'''
