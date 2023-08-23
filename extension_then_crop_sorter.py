@@ -276,8 +276,8 @@ def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: Ph
 	- The order form is a csv, where every row is an order with the format: pk, FieldName, Crop, Customer, Farm, Variety, Manager, Zone, Acres, Region, Product (only FieldName, Crop, Customer, Farm, and Manager are used by the current algorithm)
 	'''
 	### Determine the destination directory of files ###
-	if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, 'Tiff')
-	elif photofile.ext == 'jpg': destination_dir = os.path.join(destination_dir, 'JPG')
+	if photofile.ext == 'tif': destination_dir = os.path.join(target_dir, 'Tiff')
+	elif photofile.ext == 'jpg': destination_dir = os.path.join(target_dir, 'JPG')
 
 	destination_dir = os.path.join(destination_dir, order.crop)
 		
