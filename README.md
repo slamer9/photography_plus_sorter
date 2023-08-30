@@ -1,2 +1,2 @@
-# james_cresaon_sorter
-A sorter to process orders for James Creasons photos
+# photography plus sorter
+This program moves images from a source folder to a destination folder, sorted according to an order form
