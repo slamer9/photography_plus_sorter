@@ -3,6 +3,9 @@
 	# filenames in the source folder should be in the format [Date]_[Customer]_[Farm]_[FieldName]_[Product].[extension]. An '_' is also used within attribute names if there are spaces inside of them
 # When run, the order form will be read and transfer files from the source folder, to the destination folder, based on the order form
 
+# Toggle setting variable
+WRITE_UNFULFILLED_ORDERS = False # Toggle this variable to turn on the program writing unfulfilled orders to their own csv file
+
 import os
 import shutil
 import csv
@@ -175,9 +178,10 @@ def handle_edge_cases(unfulfilled_orders:list, processed_files:dict, target_dir:
 		warning (str): A warning to display via the GUI
 	'''
 	# Write out all unfulfilled orders to it's own file
-	if len(unfulfilled_orders) > 0:
-		unfulfilled_orders.insert(0, Order.CSV_HEADER) # Add a header to the list of unfulfilled orders, so it's a readable CSV
-		write_logfile(location=target_dir, name=f"Unfulfilled_orders_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv", content='\n'.join(unfulfilled_orders), warning='Unfulfilled Orders')
+	if WRITE_UNFULFILLED_ORDERS:
+		if len(unfulfilled_orders) > 0:
+			unfulfilled_orders.insert(0, Order.CSV_HEADER) # Add a header to the list of unfulfilled orders, so it's a readable CSV
+			write_logfile(location=target_dir, name=f"Unfulfilled_orders_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv", content='\n'.join(unfulfilled_orders), warning='Unfulfilled Orders')
 	
 	# Notify if there were multiple orders that matched to the same file
 	order_message = ''
