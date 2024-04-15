@@ -72,12 +72,14 @@ class Order:
 		'''
 		self.pk = row[0]
 		self.field_name = row[1]
-		self.crop = row[2]
-		self.customer = row[3]
-		self.farm = row[4]
-		# self.variety = row[5] # Not used in algorithm, so not included
-		self.manager = row[6]
-		# self.zone = row[7] # Not used in algorithm, so not included
+		# self.product = row[2] # Not used in algorithm, so not included
+		self.crop = row[3]
+		self.customer = row[4]
+		self.farm = row[5]
+		# self.variety = row[6] # Not used in algorithm, so not included
+		self.manager = row[7]
+		# self.zone = row[8] # Not used in algorithm, so not included
+		# self.region = row[9] # Not used in algorithm, so not included
 	
 	def to_csv_format(self):
 		'''
