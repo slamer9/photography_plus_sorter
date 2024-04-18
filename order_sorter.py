@@ -13,6 +13,7 @@ import tkinter as tk
 from tkinter import filedialog, ttk
 import sys
 from datetime import datetime
+from enum import Enum
 # from typing import Tuple, List
 
 # Filename variables
@@ -52,14 +53,37 @@ class FolderFileSelect(tk.Frame):
 	def get_path(self):
 		return self.folderPath.get()
 
+
+# Structure of the order form. This needs to represent the order of the columns in the order form (currently the code is set up such that the names must not change, but the order can change). And Enum to keep things consistent and dynamic
+class CSV_Columns(Enum):
+	'''
+	This enum keeps track of the order of the columns. If they are changed in here then they can be changed in the order form. However the names themselves must stay the same if they're directly referenced in the algorithm, otherwise all instances need to be changed as well
+	'''
+	# TODO, delete?
+	pk = 0
+	field_name = 1
+	product = 2
+	crop = 3
+	customer = 4
+	farm = 5
+	variety = 6
+	manager = 7
+	zone = 8
+	region = 9
+	order_status = 10
+	date_acquired = 11
+	reshoot = 12
+
+	CSV_HEADER = 'pk,FieldName,Product,Crop,Customer,Farm,Variety,Manager,Zone,Region,Order_status,Date_Acquired,Reshoot' # How the header appears in the actual CSV.
+
 # Order class to make sure that orders read from the order form are standardized
 class Order:
 	'''
 	- Represents the relevant information from an order, where each line within the order form is considered an order
 	- Contains relevant methods to manipulate Order objects, and read/write an order to/from a csv
 	'''
-	# At the moment only customer, farm, and field_name are relevant data for the algorith, but that may change so I'm inluding more order data
-	CSV_HEADER = 'pk,FieldName,Crop,Customer,Farm,Variety,Manager,Zone,Acres,Region,Product' # Order form header (CSV format)
+	# At the moment only customer, farm, and field_name are relevant data for the algorith, but that may change so I'm inluding more order data, TODO
+	CSV_HEADER = 'pk,FieldName,Product,Crop,Customer,Farm,Variety,Manager,Zone,Region,Order_status,Date_Acquired,Reshoot' # How the header appears in the order form CSV. TODO, don't need?
 
 	def __init__(self, row):
 		'''
@@ -69,19 +93,33 @@ class Order:
 		NOTE
 		- The information is designated here by the order the columns show up. If that should be changed to be based on the names of the columns, then this needs to be changed here
 		- Right now the only relevant information from the order form that the sorter needs are: field_name, crop, customer, farm, and manager. Other data is discarded, but can easily be added below
+		- If a field is empty it will be read in as an empty string
 		'''
 		self.pk = row[0]
 		self.field_name = row[1]
-		# self.product = row[2] # Not used in algorithm, so not included
+		self.product = row[2] # Not used in algorithm, so not included
 		self.crop = row[3]
 		self.customer = row[4]
 		self.farm = row[5]
-		# self.variety = row[6] # Not used in algorithm, so not included
+		self.variety = row[6] # Not used in algorithm, so not included
 		self.manager = row[7]
-		# self.zone = row[8] # Not used in algorithm, so not included
-		# self.region = row[9] # Not used in algorithm, so not included
+		self.zone = row[8] # Not used in algorithm, so not included
+		self.region = row[9] # Not used in algorithm, so not included
+
+		# TODO account for case where these don't exist, and use the ENUM
+		self.order_status = row[10]
+		self.date_acquired = row[11]
+		self.reshoot = row[12]
 	
-	def to_csv_format(self):
+	def every_match_present(matching_photofiles:list) -> bool:
+		'''
+		Input is a list of all matching photofiles for this order
+		Return a true or a false if every product type for this order has both a jpeg and a tif
+		'''
+		#TODO finish
+		pass
+	
+	def to_csv_format(self) -> str:
 		'''
 		Return a string of the order information, in a CSV format. (Simmilar to what was read in. An identical Order object should be created if initiated by the result of this function)
 		'''
@@ -182,7 +220,7 @@ def handle_edge_cases(unfulfilled_orders:list, processed_files:dict, target_dir:
 	# Write out all unfulfilled orders to it's own file
 	if WRITE_UNFULFILLED_ORDERS:
 		if len(unfulfilled_orders) > 0:
-			unfulfilled_orders.insert(0, Order.CSV_HEADER) # Add a header to the list of unfulfilled orders, so it's a readable CSV
+			unfulfilled_orders.insert(0, CSV_Columns.CSV_HEADER.value) # Add a header to the list of unfulfilled orders, so it's a readable CSV
 			write_logfile(location=target_dir, name=f"Unfulfilled_orders_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv", content='\n'.join(unfulfilled_orders), warning='Unfulfilled Orders')
 	
 	# Notify if there were multiple orders that matched to the same file
@@ -212,14 +250,16 @@ def extract_orders_from_order_form(order_form_path: str) -> list:
 	orders = []
 	duplicate_orders = []
 	with open(order_form_path) as csvfile:
-		readCSV = csv.reader(csvfile, delimiter=",") # Reader object that will iterate over each line in the CSV
-		header = next(readCSV) # Moves the header out of the reader, so now we're working with the data we want
+		reader = csv.reader(csvfile, delimiter=",") # Reader object that will iterate over each line in the CSV
+		header = next(reader) # Moves the header out of the read buffer, so now we're working with the data we want. Throw this data away, we don't need it.
 
 		# Translate all orders inside the order form, into the list of Order objects. If duplicate orders exist, ignore the duplicates, and write that information out to a file.
-		for row in readCSV:
+		for row in reader:
 			new_order = Order(row)
 			if new_order in orders: duplicate_orders.append(str(new_order))
-			else: orders.append(Order(row))
+			else: orders.append(new_order)
+		
+		# orders = [dict(zip(header, row)) for row in reader] # TODO test generalized code
 
 	if len(duplicate_orders) > 0: # Handle duplicate data in the order form
 		duplicate_orders.insert(0,"The following are the duplicate orders:")
@@ -313,13 +353,15 @@ def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: Ph
 
 def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir:str) -> int:
 	'''
-	Parses the order form, and searches the photo directory for matches.
+	Parses the order form, searches the photo directory for matches, and makes sure theres a jpeg and tif match for every product type.
 	Processes matches according to the specific algorithm
 	Handles edge cases (orders with no matches, or unfulfilled orders) and creates relevant files about them in the target directory.
 	Returns the number of files that were moved
+
 	- Create a list of orders from the order form
 	- Create a list of photo filenames in the photo directory
-	- For every order, find the photo filename(s) from the list that match, and process them
+	- For every order, find the photo filenames from the list that match
+	- If there is a jpeg and a tif file for every product type in an order, then process them; otherwise make a failure case
 	- Compile orders that were unable to complete, write them in CSV format to a file in the target directory
 	- Write a file detailing duplicate order details
 
@@ -329,32 +371,38 @@ def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir
 		target_dir (str, PathLike): Path to the target directory
 
 	Returns:
-		Tuple[int, str]: Number of files that were moved, and a string of unfulfilled orders in csv format (empty string if no unfulfilled orders)
-
+		Int: Number of files that were moved
 	Raises:
 		FileNotFoundError: If the photo directory or target directory does not exist.
 	'''
 	orders = extract_orders_from_order_form(order_form_path) # A list of Order objects, representing the orders from the order form
 	photo_files = [PhotoFile(fname) for fname in os.listdir(photo_dir_path) if os.path.isfile(os.path.join(photo_dir_path, fname))] # A list of PhotoFile objects, for all the filenames in the photo_dir_path
 
-	# Edge case checking variables
-	unfulfilled_orders = [] # Keep track of any orders that didn't have any matching files to move
+	# Variables to keep track of data to detect edge failure cases
+	unfulfilled_orders = [] # Keep track of any orders that didn't have the matching files to move
 	processed_files = {} # Keep track of what files have been moved, to catch if multiple orders are attempting to move the same files. processed_files: keys = the filename, values = a list of corresponding orders that match that file.
 
-	for order in orders: # For every order, search the filenames for matching files, and process them
+	for order in orders: # For every order, search the filenames for matching files, and process them (only if a jpeg and tif are matched for every product type, otherwise it's a failure and don't process)
+		matching_photos = []
 		found_match = False
 		for photofile in photo_files:
 			if photofile.matches_order(order):
-				if photofile.filename not in processed_files:
-					found_match = True
-					process_file(target_dir, photo_dir_path, order, photofile)
-					processed_files[photofile.filename] = [order] # list the processed file alongside the order that processed it
-				else: # file has already been processed by another order
-					processed_files[photofile.filename].append(order)
+				matching_photos.append(photofile)
+		if order.every_match_present():
+			pass #TODO
+
+
+		if photofile.filename not in processed_files:
+			found_match = True
+			process_file(target_dir, photo_dir_path, order, photofile)
+			processed_files[photofile.filename] = [order] # list the processed file alongside the order that processed it
+		else: # file has already been processed by another order
+			processed_files[photofile.filename].append(order) # TODO, look down this path for files processed by multiple orders
 		if not found_match:
+			# TODO, update this to new method
 			unfulfilled_orders.append(order.to_csv_format())
 	
-	handle_edge_cases(unfulfilled_orders, processed_files, target_dir) # Deal with unfulfilled and duplicate orders
+	handle_edge_cases(unfulfilled_orders, processed_files, target_dir) # Deal with unfulfilled and duplicate orders # TODO, and files handled multiple times by different orders?
 	return len(processed_files)
 
 def attempt_process(
