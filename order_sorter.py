@@ -13,35 +13,6 @@ from datetime import datetime
 from enum import Enum
 # from typing import Tuple, List
 
-# Class to ineract with the GUI
-class FolderFileSelect(tk.Frame):
-	def __init__(self, parent=None, folderDescription="", select_file=False, **kw):
-		tk.Frame.__init__(self, master=parent, **kw)
-		self.select_file = select_file
-		self.folderPath = tk.StringVar()
-		self.lblName = tk.Label(self, text=folderDescription)
-		self.lblName.grid(row=0, column=0, padx=15, pady=15)
-		self.entPath = tk.Entry(self, textvariable=self.folderPath, width=65)
-		self.entPath.grid(
-			row=0,
-			column=1,
-		)
-
-		button_text = "Select File" if select_file else "Select Folder"
-		self.btnFind = ttk.Button(self, text=button_text, command=self.setFolderPath)
-		self.btnFind.grid(row=0, column=2, padx=20, pady=15)
-
-	def setFolderPath(self):
-		if self.select_file:
-			folder_selected = filedialog.askopenfile()
-			folder_selected = folder_selected.name
-		else:
-			folder_selected = filedialog.askdirectory()
-		self.folderPath.set(folder_selected)
-
-	def get_path(self):
-		return self.folderPath.get()
-
 # Filename variables
 TIF_FOLDER_NAME, JPG_FOLDER_NAME = "GeoTiff", "JPG"
 PRODUCT_NAME_TRANSLATIONS = {
@@ -49,6 +20,7 @@ PRODUCT_NAME_TRANSLATIONS = {
 	"FCIR": "Infrared",
 	"RGB": "Color",
 }
+PRODUCT_SEPARATOR = '-'
 
 # Order form variables. If the names of these change on the order form (even simple things like spelling or capitalization), they need to be changed here
 class CSV_cols():
@@ -135,7 +107,7 @@ class Order:
 		Returns:
 			bool: If every match is present
 		'''
-		for product in self.data[CSV_cols.product].split('-'): # If multiple products are present, they are separated by a dash
+		for product in self.data[CSV_cols.product].split(PRODUCT_SEPARATOR): # If multiple products are present, they are separated by a dash
 			jpeg_match = False
 			tif_match = False
 			for photofile in matching_photofiles:
@@ -166,6 +138,8 @@ class Order:
 				self.data[CSV_cols.reshoot] = 'Unknown (previous order status data was neither "Complete" nor "Incomplete")'
 
 			self.data[CSV_cols.Order_status] = 'Complete'
+		elif self.data[CSV_cols.Order_status] == 'Complete':
+			pass # If matches weren't found, but the order is already complete, then ignore this order, don't do anything with it
 		else:
 			self.data[CSV_cols.Order_status] = 'Incomplete'
 
@@ -179,21 +153,21 @@ class Order:
 			orders (list of Order objects): List of all the orders the program has gone through
 			old_order_form_path (str, PathLike): Path to the original order form file (CSV format)
 		'''
-		order_form_directory = os.path.dirname(old_order_form_path)
-		old_filename = os.path.basename(old_order_form_path)
-
-		# Determine filename of the updated orderform to avoid namespace conflicts
-		name, ext = old_filename.split('.') 
-		new_filename = name + '_processed' + '.' + ext
-		new_destination = os.path.join(order_form_directory, new_filename)
-		iterations = 0 # How many times a unique filename failed to generate
-		while(os.path.exists(new_destination)):
-			iterations += 1
-			new_filename = name + '_processed' + str(iterations) + '.' + ext
-			new_destination = os.path.join(order_form_directory, new_filename)
+		# THIS CODE NO LONGER RELEVANT, AS THE PROGRAM JUST OVERWRITES THE ORDER FORM, INSTEAD OF CREATES A NEW ONE
+		# order_form_directory = os.path.dirname(old_order_form_path)
+		# old_filename = os.path.basename(old_order_form_path)
+		# # Determine filename of the updated orderform to avoid namespace conflicts
+		# name, ext = old_filename.split('.') 
+		# new_filename = name + '_processed' + '.' + ext
+		# new_destination = os.path.join(order_form_directory, new_filename)
+		# iterations = 0 # How many times a unique filename failed to generate
+		# while(os.path.exists(new_destination)):
+		# 	iterations += 1
+		# 	new_filename = name + '_processed' + str(iterations) + '.' + ext
+		# 	new_destination = os.path.join(order_form_directory, new_filename)
 		
 		# Write out the new order form
-		with open(new_destination, mode='w', newline='') as file:
+		with open(old_order_form_path, mode='w', newline='') as file:
 			writer = csv.writer(file)
 			writer.writerow(Order.csv_header) # Output headers in the original order
 			for order in orders:
@@ -259,6 +233,35 @@ class PhotoFile:
 		if isinstance(other, PhotoFile):
 			return (self.filename == other.filename)
 		return False
+
+# Class to ineract with the GUI
+class FolderFileSelect(tk.Frame):
+	def __init__(self, parent=None, folderDescription="", select_file=False, **kw):
+		tk.Frame.__init__(self, master=parent, **kw)
+		self.select_file = select_file
+		self.folderPath = tk.StringVar()
+		self.lblName = tk.Label(self, text=folderDescription)
+		self.lblName.grid(row=0, column=0, padx=15, pady=15)
+		self.entPath = tk.Entry(self, textvariable=self.folderPath, width=65)
+		self.entPath.grid(
+			row=0,
+			column=1,
+		)
+
+		button_text = "Select File" if select_file else "Select Folder"
+		self.btnFind = ttk.Button(self, text=button_text, command=self.setFolderPath)
+		self.btnFind.grid(row=0, column=2, padx=20, pady=15)
+
+	def setFolderPath(self):
+		if self.select_file:
+			folder_selected = filedialog.askopenfile()
+			folder_selected = folder_selected.name
+		else:
+			folder_selected = filedialog.askdirectory()
+		self.folderPath.set(folder_selected)
+
+	def get_path(self):
+		return self.folderPath.get()
 
 def write_logfile(location:str, content:str, name:str = f"logfile_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", warning:str = None):
 	'''
