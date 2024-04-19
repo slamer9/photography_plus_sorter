@@ -62,8 +62,8 @@ class CSV_cols():
 	manager = 'Manager'
 	zone = 'Zone'
 	region = 'Region'
-	order_status = 'Order_status',
-	date_aquired = 'Date_Acquired',
+	Order_status = 'Order_status' # Capitalized to keep the order in a desired way (any attributes not included in an order form will be added in alphabetical order). If it becomes a problem, this can be solved by explicitly stating the order that these attributes should be added in the 'extract_orders_from_order_form' method.
+	date_aquired = 'Date_Acquired'
 	reshoot = 'Reshoot'
 
 # Order class to make sure that orders read from the order form are standardized
@@ -82,8 +82,8 @@ class Order:
 		- Order form name data needs to match what the program expects. If a column name is referenced in the algorithm, then it needs to appear exactly as it does in CSV_cols
 		'''
 		self.data = order_data
-		# Some headers (like Order_status, Date_Acquired, and Reshoot) are not guaranteed to be in the order form, so we need to make sure they're in the order object
-		[self.data.setdefault(attr,'') for attr in dir(CSV_cols) if not callable(getattr(CSV_cols,attr)) and not attr.startswith("__")]
+		# Some columns (like Order_status, Date_Acquired, and Reshoot) are not guaranteed to be in the order form, so we need to make sure they're in the order object
+		[self.data.setdefault(getattr(CSV_cols, attr),'') for attr in dir(CSV_cols) if not callable(getattr(CSV_cols,attr)) and not attr.startswith("__")]
 
 	def extract_orders_from_order_form(order_form_path: str) -> list:
 		'''
@@ -108,6 +108,11 @@ class Order:
 			for row in reader:
 				new_order = Order(dict(zip(header, row)))
 				duplicate_orders.append(str(new_order)) if new_order in orders else orders.append(new_order)
+			
+			# Some columns (like Order_status, Date_Acquired, and Reshoot) are not guaranteed to be in the order form, so we need to make sure they're in the header. Just add them onto the end
+			for col in [getattr(CSV_cols, attr) for attr in dir(CSV_cols) if not callable(getattr(CSV_cols,attr)) and not attr.startswith("__")]:
+				if col not in header:
+					header.append(col)
 			Order.csv_header = header
 			
 		if len(duplicate_orders) > 0: # Handle duplicate data in the order form
@@ -153,16 +158,16 @@ class Order:
 		'''
 		if completed:
 			self.data[CSV_cols.date_aquired] = date # All matching photos should have the same date, so just use the first one
-			if self.data[CSV_cols.order_status] == 'Incomplete' or self.data[CSV_cols.order_status] == '':
+			if self.data[CSV_cols.Order_status] == 'Incomplete' or self.data[CSV_cols.Order_status] == '':
 				self.data[CSV_cols.reshoot] = 'False'
-			elif self.data[CSV_cols.order_status] == 'Complete':
+			elif self.data[CSV_cols.Order_status] == 'Complete':
 				self.data[CSV_cols.reshoot] = 'True'
 			else:#If we ever reach this point, it means the order form had bad data for the order status
 				self.data[CSV_cols.reshoot] = 'Unknown (previous order status data was neither "Complete" nor "Incomplete")'
 
-			self.data[CSV_cols.order_status] = 'Complete'
+			self.data[CSV_cols.Order_status] = 'Complete'
 		else:
-			self.data[CSV_cols.order_status] = 'Incomplete'
+			self.data[CSV_cols.Order_status] = 'Incomplete'
 
 	def create_updated_orderform(orders:list, old_order_form_path:str):
 		'''
@@ -517,7 +522,7 @@ if __name__ == "__main__":
 	order_form_selection.grid(row=2)
 
 	# Create a checkbox to mark if we want to move or copy the files
-	copy = tk.IntVar()  # Binary variable to store checkbox state
+	copy = tk.IntVar(value=1)  # Binary variable to store checkbox state
 	checkbox = ttk.Checkbutton(gui, text="Copy files", variable=copy)
 	checkbox.grid(row=3)
 
