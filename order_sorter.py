@@ -531,7 +531,7 @@ if __name__ == "__main__":
 
 	# Create a button to start the process
 	def start_process():
-		attempt_process(target_selection=target_selection, photo_selection=photo_selection, order_form_selection=order_form_selection, copy=copy)
+		attempt_process(target_selection=target_selection, photo_selection=photo_selection, order_form_selection=order_form_selection, copy=bool(copy.get()))
 
 	start_button = ttk.Button(gui, text="Move Image Files", command=start_process)
 	start_button.grid(row=4, column=0)
