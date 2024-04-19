@@ -3,9 +3,6 @@
 	# filenames in the source folder should be in the format [Date]_[Customer]_[Farm]_[FieldName]_[Product].[extension]. An '_' is also used within attribute names if there are spaces inside of them
 # When run, the order form will be read and transfer files from the source folder, to the destination folder, based on the order form
 
-# Toggle setting variable
-WRITE_UNFULFILLED_ORDERS = False # Toggle this variable to turn on the program writing unfulfilled orders to their own csv file
-
 import os
 import shutil
 import csv
@@ -15,14 +12,6 @@ import sys
 from datetime import datetime
 from enum import Enum
 # from typing import Tuple, List
-
-# Filename variables
-TIF_FOLDER_NAME, JPG_FOLDER_NAME = "GeoTiff", "JPG"
-PRODUCT_NAME_TRANSLATIONS = {
-	# "EVI_Values": "Bioindex_Report",
-	"FCIR": "Infrared",
-	"RGB": "Color",
-}
 
 # Class to ineract with the GUI
 class FolderFileSelect(tk.Frame):
@@ -53,93 +42,170 @@ class FolderFileSelect(tk.Frame):
 	def get_path(self):
 		return self.folderPath.get()
 
+# Filename variables
+TIF_FOLDER_NAME, JPG_FOLDER_NAME = "GeoTiff", "JPG"
+PRODUCT_NAME_TRANSLATIONS = {
+	# "EVI_Values": "Bioindex_Report",
+	"FCIR": "Infrared",
+	"RGB": "Color",
+}
 
-# Structure of the order form. This needs to represent the order of the columns in the order form (currently the code is set up such that the names must not change, but the order can change). And Enum to keep things consistent and dynamic
-class CSV_Columns(Enum):
-	'''
-	This enum keeps track of the order of the columns. If they are changed in here then they can be changed in the order form. However the names themselves must stay the same if they're directly referenced in the algorithm, otherwise all instances need to be changed as well
-	'''
-	# TODO, delete?
-	pk = 0
-	field_name = 1
-	product = 2
-	crop = 3
-	customer = 4
-	farm = 5
-	variety = 6
-	manager = 7
-	zone = 8
-	region = 9
-	order_status = 10
-	date_acquired = 11
-	reshoot = 12
-
-	CSV_HEADER = 'pk,FieldName,Product,Crop,Customer,Farm,Variety,Manager,Zone,Region,Order_status,Date_Acquired,Reshoot' # How the header appears in the actual CSV.
+# Order form variables. If the names of these change on the order form (even simple things like spelling or capitalization), they need to be changed here
+class CSV_cols():
+	pk = 'pk'
+	field_name = 'FieldName'
+	product = 'Product'
+	crop = 'Crop'
+	customer = 'Customer'
+	farm = 'Farm'
+	variety = 'Variety'
+	manager = 'Manager'
+	zone = 'Zone'
+	region = 'Region'
+	order_status = 'Order_status',
+	date_aquired = 'Date_Acquired',
+	reshoot = 'Reshoot'
 
 # Order class to make sure that orders read from the order form are standardized
 class Order:
 	'''
-	- Represents the relevant information from an order, where each line within the order form is considered an order
+	- Represents the relevant information from an order (where each line within the orderform is considered an order)
 	- Contains relevant methods to manipulate Order objects, and read/write an order to/from a csv
+	- Contains common details across orders of an order form (the header)
 	'''
-	# At the moment only customer, farm, and field_name are relevant data for the algorith, but that may change so I'm inluding more order data, TODO
-	CSV_HEADER = 'pk,FieldName,Product,Crop,Customer,Farm,Variety,Manager,Zone,Region,Order_status,Date_Acquired,Reshoot' # How the header appears in the order form CSV. TODO, don't need?
-
-	def __init__(self, row):
+	def __init__(self, order_data):
 		'''
-		Initiates an Order object from the details in a row of an order form
-		Replaces spaces with underscores for data that appears in filenames
+		Initiates an Order object from the details inside a row of the order form (in dictionary form)
 
 		NOTE
-		- The information is designated here by the order the columns show up. If that should be changed to be based on the names of the columns, then this needs to be changed here
-		- Right now the only relevant information from the order form that the sorter needs are: field_name, crop, customer, farm, and manager. Other data is discarded, but can easily be added below
 		- If a field is empty it will be read in as an empty string
+		- Order form name data needs to match what the program expects. If a column name is referenced in the algorithm, then it needs to appear exactly as it does in CSV_cols
 		'''
-		self.pk = row[0]
-		self.field_name = row[1]
-		self.product = row[2] # Not used in algorithm, so not included
-		self.crop = row[3]
-		self.customer = row[4]
-		self.farm = row[5]
-		self.variety = row[6] # Not used in algorithm, so not included
-		self.manager = row[7]
-		self.zone = row[8] # Not used in algorithm, so not included
-		self.region = row[9] # Not used in algorithm, so not included
+		self.data = order_data
+		# Some headers (like Order_status, Date_Acquired, and Reshoot) are not guaranteed to be in the order form, so we need to make sure they're in the order object
+		[self.data.setdefault(attr,'') for attr in dir(CSV_cols) if not callable(getattr(CSV_cols,attr)) and not attr.startswith("__")]
 
-		# TODO account for case where these don't exist, and use the ENUM
-		self.order_status = row[10]
-		self.date_acquired = row[11]
-		self.reshoot = row[12]
+	def extract_orders_from_order_form(order_form_path: str) -> list:
+		'''
+		Reads the order form and returns a list of Order objects, detailing what the order form wanted
+		If there are duplicate orders, write those details to a file
+
+		Parameters:
+			order_form_path (str, PathLike): Path to the order form file (CSV format)
+
+		Returns:
+			list: A list of orders
+
+		Raises:
+			FileNotFoundError: If the order form does not exist.
+		'''
+		orders = []
+		duplicate_orders = []
+		# Translate all orders inside the order form into a list of Order objects. If duplicate orders exist, ignore the duplicates, and write that information out to a warning file.
+		with open(order_form_path) as csvfile:
+			reader = csv.reader(csvfile, delimiter=",") # Reader object that will iterate over each line in the CSV
+			header = next(reader) # Moves the header out of the read buffer, so now we're working with the data we want. Throw this data away, we don't need it.
+			for row in reader:
+				new_order = Order(dict(zip(header, row)))
+				duplicate_orders.append(str(new_order)) if new_order in orders else orders.append(new_order)
+			Order.csv_header = header
+			
+		if len(duplicate_orders) > 0: # Handle duplicate data in the order form
+			duplicate_orders.insert(0,"The following are the duplicate orders:")
+			write_logfile(location=os.path.dirname(order_form_path), name=f"Order_duplicates_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content='\n'.join(duplicate_orders), warning='Duplicate orders present')
+		
+		return orders
 	
-	def every_match_present(matching_photofiles:list) -> bool:
+	def every_match_present(self, matching_photofiles:list) -> bool:
 		'''
 		Input is a list of all matching photofiles for this order
-		Return a true or a false if every product type for this order has both a jpeg and a tif
+		Return a true or a false if every product type for this order has both a jpg and a tif
+
+		Parameters:
+			order_form_path (str, PathLike): Path to the order form file (CSV format)
+			photo_dir_path (str, PathLike): Path to the directory of photos
+			target_dir (str, PathLike): Path to the target directory
+			copy (bool): copy or move
+
+		Returns:
+			bool: If every match is present
 		'''
-		#TODO finish
-		pass
-	
-	def to_csv_format(self) -> str:
+		for product in self.data[CSV_cols.product].split('-'): # If multiple products are present, they are separated by a dash
+			jpeg_match = False
+			tif_match = False
+			for photofile in matching_photofiles:
+				if photofile.product == product:
+					if photofile.ext == 'tif':
+						tif_match = True
+					elif photofile.ext == 'jpeg' or photofile.ext == 'jpg':
+						jpeg_match = True
+					else:
+						raise Exception(f"File found with unrecongnized extension (not 'jpeg', 'jpg', or 'tif')\nFile name: {photofile.filename}\tExtension: {photofile.ext}")
+			if jpeg_match and tif_match:
+				pass # Matches were found for this product
+			else:
+				return False
+		return True
+
+	def update_order_details(self, completed:bool, date:str = None) -> None:
 		'''
-		Return a string of the order information, in a CSV format. (Simmilar to what was read in. An identical Order object should be created if initiated by the result of this function)
+		Update order details to show if an order was completed; and if it was, update the date and mark if it was a reshoot
 		'''
-		return f'{self.pk},{self.field_name},{self.crop},{self.customer},{self.farm},,{self.manager},,,,' # TODO make this general? maybe enum instead of counting commas and importing row[x] (also making it extensible to the photoFile class)? maybe csv has a function?
+		if completed:
+			self.data[CSV_cols.date_aquired] = date # All matching photos should have the same date, so just use the first one
+			if self.data[CSV_cols.order_status] == 'Incomplete' or self.data[CSV_cols.order_status] == '':
+				self.data[CSV_cols.reshoot] = 'False'
+			elif self.data[CSV_cols.order_status] == 'Complete':
+				self.data[CSV_cols.reshoot] = 'True'
+			else:#If we ever reach this point, it means the order form had bad data for the order status
+				self.data[CSV_cols.reshoot] = 'Unknown (previous order status data was neither "Complete" nor "Incomplete")'
+
+			self.data[CSV_cols.order_status] = 'Complete'
+		else:
+			self.data[CSV_cols.order_status] = 'Incomplete'
+
+	def create_updated_orderform(orders:list, old_order_form_path:str):
+		'''
+		Writes all of the order objects out to a new order form, keeping the same order of columns as the input order form
+		- Determine a different name for the new order form to ensure no namespace conflicts
+		- Write the header then, one order at a time, write the data out following header order
+
+		Parameters:
+			orders (list of Order objects): List of all the orders the program has gone through
+			old_order_form_path (str, PathLike): Path to the original order form file (CSV format)
+		'''
+		order_form_directory = os.path.dirname(old_order_form_path)
+		old_filename = os.path.basename(old_order_form_path)
+
+		# Determine filename of the updated orderform to avoid namespace conflicts
+		name, ext = old_filename.split('.') 
+		new_filename = name + '_processed' + '.' + ext
+		new_destination = os.path.join(order_form_directory, new_filename)
+		iterations = 0 # How many times a unique filename failed to generate
+		while(os.path.exists(new_destination)):
+			iterations += 1
+			new_filename = name + '_processed' + str(iterations) + '.' + ext
+			new_destination = os.path.join(order_form_directory, new_filename)
+		
+		# Write out the new order form
+		with open(new_destination, mode='w', newline='') as file:
+			writer = csv.writer(file)
+			writer.writerow(Order.csv_header) # Output headers in the original order
+			for order in orders:
+				writer.writerow([order.data[header] for header in Order.csv_header]) # Write data in the header order
 	
 	def __eq__(self, other):
 		'''
-		Compare two orders for equality.
-		Currently is used to see if there are duplicate orders that match to the same file, so filename information is checked here [Customer] [Farm] [FieldName]
+		- Compare two orders for equality.
+		- Currently is used to see if there are duplicate orders that match to the same file
+			-- So the only detils being checked here are self.data[CSV_cols.___] for customer, farm, and fieldName
+			-- If that changes and other data needs to be checked, then this needs to change
 		'''
 		if isinstance(other, Order):
 			return (
-				# self.pk == other.pk
-				self.field_name == other.field_name
-				# and self.crop == other.crop
-				and self.customer == other.customer
-				and self.farm == other.farm
-				# and self.variety == other.variety
-				# and self.manager == other.manager
-				# and self.zone == other.zone
+				self.data[CSV_cols.field_name] == other.data[CSV_cols.field_name]
+				and self.data[CSV_cols.customer] == other.data[CSV_cols.field_name]
+				and self.data[CSV_cols.farm] == other.data[CSV_cols.field_name]
 			)
 		return False
 	
@@ -147,7 +213,7 @@ class Order:
 		"""
 		Return a string representation of the Order object.
 		"""
-		return f'pk: {self.pk}, field_name: {self.field_name}, crop: {self.crop}, customer: {self.customer}, farm: {self.farm}, manager: {self.manager}'
+		print(self.data)
 
 # PhotoFile class to make sure that photo filenames are read in a standarized way
 class PhotoFile:
@@ -176,7 +242,7 @@ class PhotoFile:
 		Returns True if the photofile matches the order, False otherwise.
 		Checks if it's a match by comparing self.order_searchable_name to what it should be based on the order form
 		'''
-		return self.order_searchable_name == order.customer.replace(' ','_') + '_' + order.farm.replace(' ','_') + '_' + order.field_name.replace(' ','_')
+		return self.order_searchable_name == order.data[CSV_cols.customer].replace(' ','_') + '_' + order.data[CSV_cols.farm].replace(' ','_') + '_' + order.data[CSV_cols.field_name].replace(' ','_')
 	
 	def __str__(self) -> str:
 		return self.filename
@@ -205,73 +271,31 @@ def write_logfile(location:str, content:str, name:str = f"logfile_{datetime.now(
 		file.write(content)
 	if warning is not None: tk.messagebox.showerror(warning, f"Log file {name} created at {location}")
 
-def handle_edge_cases(unfulfilled_orders:list, processed_files:dict, target_dir:str):
+def handle_order_overlap(processed_files:dict, target_dir:str):
 	'''
-	Handle edge cases (duplicate orders, or unmatched orders), if applicable
-	Write out unmatched orders to a new order form that can be run later
-	Write a file that details duplicate order details
+	Handle any order overlap, if applicable
+	
+	- Detail image files that matched with multiple orders, and which orders those were
+	- Write details to logfile
 
 	Parameters:
-		unfulfilled_orders (list, PathLike): list of orders (in CSV format)
 		processed_files (dict; key=processed filename, val = list of orders that matched that filename): 
 		target_dir (str, PathLike): Path to the target directory 
-		warning (str): A warning to display via the GUI
 	'''
-	# Write out all unfulfilled orders to it's own file
-	if WRITE_UNFULFILLED_ORDERS:
-		if len(unfulfilled_orders) > 0:
-			unfulfilled_orders.insert(0, CSV_Columns.CSV_HEADER.value) # Add a header to the list of unfulfilled orders, so it's a readable CSV
-			write_logfile(location=target_dir, name=f"Unfulfilled_orders_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.csv", content='\n'.join(unfulfilled_orders), warning='Unfulfilled Orders')
-	
-	# Notify if there were multiple orders that matched to the same file
+	# Notify if there were files matched by multiple orders
 	order_message = ''
 	for filename in processed_files:
-		if len(processed_files[filename]) > 1: # If multiple orders match to the file
+		if len(processed_files[filename]) > 1: # Multiple orders match to the file
 			order_message += f'The file {filename} was matched by multiple different orders. The following orders matched with the file:\n'
 			for order in processed_files[filename]:
 				order_message += f'\t{order}\n'
 	if len(order_message) > 0:
-		write_logfile(location=target_dir, name=f"Order_duplicates_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content=order_message, warning='Duplicate orders present: Inidividual files were matched with muiltiple orders')
-
-def extract_orders_from_order_form(order_form_path: str) -> list:
-	'''
-	Reads the order form and returns a list of Order objects, detailing what the order form wanted
-	If there are duplicate orders, write those details to a file
-
-	Parameters:
-		order_form_path (str, PathLike): Path to the order form file (CSV format)
-
-	Returns:
-		list: A list of orders
-
-	Raises:
-		FileNotFoundError: If the order form does not exist.
-	'''
-	orders = []
-	duplicate_orders = []
-	with open(order_form_path) as csvfile:
-		reader = csv.reader(csvfile, delimiter=",") # Reader object that will iterate over each line in the CSV
-		header = next(reader) # Moves the header out of the read buffer, so now we're working with the data we want. Throw this data away, we don't need it.
-
-		# Translate all orders inside the order form, into the list of Order objects. If duplicate orders exist, ignore the duplicates, and write that information out to a file.
-		for row in reader:
-			new_order = Order(row)
-			if new_order in orders: duplicate_orders.append(str(new_order))
-			else: orders.append(new_order)
-		
-		# orders = [dict(zip(header, row)) for row in reader] # TODO test generalized code
-
-	if len(duplicate_orders) > 0: # Handle duplicate data in the order form
-		duplicate_orders.insert(0,"The following are the duplicate orders:")
-		write_logfile(location=os.path.dirname(order_form_path), name=f"Order_duplicates_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content='\n'.join(duplicate_orders), warning='Duplicate orders present')
-	
-	return orders
+		write_logfile(location=target_dir, name=f"Order_duplicates_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content=order_message, warning='Inidividual image files were matched with muiltiple orders')
 
 def move_file(file_to_move:str, destination_dir:str, filename:str, copy:bool = False):
 	'''
-	Move or copy the file (file_to_move), to the destination directory, as the given filename
-	- Determine the destination directory (up to date algorithm goes here), and new name (if applicable); from the order and filename information
-	- Move/copy the file to the destination directory
+	Move or copy the file to the destination directory (new filename may be different than old)
+	Edit filename if name conflicts exist in destination directory
 
 	Parameters:
 		file_to_move (str, PathLike): Path to the file that will be moved
@@ -279,27 +303,23 @@ def move_file(file_to_move:str, destination_dir:str, filename:str, copy:bool = F
 		filename (str): What to name the file when it's moved
 		copy (bool): Determines to copy or move the file
 	'''
-	### Now that destination_dir is determined, move the file ###
 	destination = os.path.join(destination_dir, filename) # destination is the destination directory + filename
 
+	# Edit filename if name conflicts exist in destination directory
 	renamed = False
 	oldname = filename
-	while(os.path.exists(destination)): # filename already exists in the destination directory, use a modified name 
+	while(os.path.exists(destination)): # If filename already exists in the destination directory, use a modified name 
 		filename = f'name_conflict_{filename}'
 		destination = os.path.join(destination_dir, filename)
 		renamed = True
 	if renamed:
 		tk.messagebox.showerror("Name conflict", f'File already exists: {oldname} already exists in {destination_dir}. Ranaming to "{filename}", so the file can be processed')
 
-	if not os.path.exists(destination_dir):
-		os.makedirs(destination_dir) # Ensure the parent directories to the destination exist
-	
-	if copy:
-		shutil.copy2(file_to_move, destination)
-	else:
-		shutil.move(file_to_move, destination)
+	# Now just move/copy the file
+	if not os.path.exists(destination_dir): os.makedirs(destination_dir) # Ensure the destination directory exists
+	shutil.copy2(file_to_move, destination) if copy else shutil.move(file_to_move, destination)
 
-def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: PhotoFile):
+def process_file(target_dir:str, photo_dir_path:str, order:Order, photofile:PhotoFile, copy:bool):
 	'''
 	Process file according to instructions
 	- Determine the destination directory (up to date algorithm goes here), and new name (if applicable); from the order and filename information
@@ -310,6 +330,7 @@ def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: Ph
 		photo_dir_path (str, PathLike): Path to the photo directory
 		order (Order object): Relevant data from the order form
 		photofile (PhotoFile object): Relevant data from the filename
+		copy (bool): Copy or move files
 
 	Raises:
 		FileNotFoundError: If the photo directory or target directory does not exist.
@@ -319,41 +340,56 @@ def process_file(target_dir:str, photo_dir_path:str, order: Order, photofile: Ph
 	-This algorithm expects file names in the form of subfields separated by underscores: [Date]_[Customer]_[Farm]_[FieldName]_[Product].[extension]
 		-- The extension is expected to be either 'tif' or 'jpg'
 		-- Subfields can also have underscores '_' in them (ie, if the customer is two words then they will be separated by '_')
-	- The order form is a csv, where every row is an order with the format: pk, FieldName, Crop, Customer, Farm, Variety, Manager, Zone, Acres, Region, Product (only FieldName, Crop, Customer, Farm, and Manager are used by the current algorithm)
+	- The order form is a csv, where every row is an order with the column names formatted as found in CSV_cols. (Only FieldName, Crop, Customer, Farm, and Manager are used by the current algorithm, the others don't necessarily need to match that format for this function)
 	'''
+	# TODO make something persistent if this fails midway through, to notify if some files were moved before program failure.
 	### Get relevant information from the photo_filename ###
 	photo_filename = photofile.filename
 	original_img_path = os.path.join(photo_dir_path, photo_filename) # get the path where the image is right now
 	product = photofile.product
 	if product in PRODUCT_NAME_TRANSLATIONS: product = PRODUCT_NAME_TRANSLATIONS[product]
 	
-
 	### Determine the destination directory of files, and change the photo_filename if needed. Up to date algorithm here ###
-	if order.customer == 'RD Offutt': # Everything goes to Anderson Geographics, JPGs also go to RD Offutt
+	if order.data[CSV_cols.customer] == 'RD Offutt': # Everything goes to Anderson Geographics, JPGs also go to RD Offutt
 		if photofile.ext == 'jpg': # Copy JPGs to RD Offutt
-			farm = '3 Mile' if order.farm == 'Inland' else order.farm
-			destination_dir = os.path.join(target_dir, order.customer, farm, order.manager, order.crop, product)
-			move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename, copy = True)
-		
+			farm = '3 Mile' if order.data[CSV_cols.farm] == 'Inland' else order.data[CSV_cols.farm]
+			destination_dir = os.path.join(target_dir, order.data[CSV_cols.customer], farm, order.data[CSV_cols.manager], order.data[CSV_cols.crop], product)
+			move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename, copy = True) # An additional copy is moved to this location, which is why move_file is being called here and down below.
 		destination_dir = os.path.join(target_dir, 'Anderson Geographics', TIF_FOLDER_NAME if photofile.ext == 'tif' else JPG_FOLDER_NAME)
-		photo_filename = f"{photofile.date}_{order.field_name.replace(' ','_')}_{photofile.product}.{photofile.ext}"
-	elif (order.customer == 'Agri NW' or order.customer == 'Washington Onion' or order.customer == 'Paterson Ferry') and photofile.ext == 'tif':
-		destination_dir = os.path.join(target_dir, 'Agri Server', order.farm)
-	elif order.customer == 'Canyon Falls':
+		photo_filename = f"{photofile.date}_{order.data[CSV_cols.field_name].replace(' ','_')}_{photofile.product}.{photofile.ext}"
+	elif (order.data[CSV_cols.customer] == 'Agri NW' or order.data[CSV_cols.customer] == 'Washington Onion' or order.data[CSV_cols.customer] == 'Paterson Ferry') and photofile.ext == 'tif':
+		destination_dir = os.path.join(target_dir, 'Agri Server', order.data[CSV_cols.farm])
+	elif order.data[CSV_cols.customer] == 'Canyon Falls':
 		if photofile.ext == 'tif':
 			destination_dir = os.path.join(target_dir, 'Canyon Falls Server')
 		else:
-			destination_dir = os.path.join(target_dir, order.customer, order.manager, order.farm, order.crop, product)
+			destination_dir = os.path.join(target_dir, order.data[CSV_cols.customer], order.data[CSV_cols.manager], order.data[CSV_cols.farm], order.data[CSV_cols.crop], product)
 	else: # Not a special case
-		destination_dir = os.path.join(target_dir, order.customer, order.farm, order.manager, order.crop, product)
+		destination_dir = os.path.join(target_dir, order.data[CSV_cols.customer], order.data[CSV_cols.farm], order.data[CSV_cols.manager], order.data[CSV_cols.crop], product)
 		if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, TIF_FOLDER_NAME)
 		
 	### Now that destination_dir is determined, move the file ###
-	move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename)
+	move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename, copy=copy)
 
-def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir:str) -> int:
+def parse_source_data(order_form_path:str, photo_dir_path:str) -> tuple:
 	'''
-	Parses the order form, searches the photo directory for matches, and makes sure theres a jpeg and tif match for every product type.
+	Parses the order form and source folder into Order and Photofile objects the algorithm can work with.
+	Parameters:
+		order_form_path (str, PathLike): Path to the order form file (CSV format)
+		photo_dir_path (str, PathLike): Path to the directory of photos
+	Returns:
+		Tuple: (list of order objects, list of photofile objects)
+	Raises:
+		FileNotFoundError: If the photo directory does not exist.
+	'''
+	orders = Order.extract_orders_from_order_form(order_form_path) # A list of Order objects, representing the orders from the order form
+	photo_files = [PhotoFile(fname) for fname in os.listdir(photo_dir_path) if os.path.isfile(os.path.join(photo_dir_path, fname))] # A list of PhotoFile objects, for all the filenames in the photo_dir_path
+	return (orders, photo_files)
+
+def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir:str, copy:bool) -> int:
+	'''
+	Parses the order form, searches the photo directory for matches
+	Makes sure theres a jpeg and tif match for every product type.
 	Processes matches according to the specific algorithm
 	Handles edge cases (orders with no matches, or unfulfilled orders) and creates relevant files about them in the target directory.
 	Returns the number of files that were moved
@@ -361,54 +397,52 @@ def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir
 	- Create a list of orders from the order form
 	- Create a list of photo filenames in the photo directory
 	- For every order, find the photo filenames from the list that match
-	- If there is a jpeg and a tif file for every product type in an order, then process them; otherwise make a failure case
-	- Compile orders that were unable to complete, write them in CSV format to a file in the target directory
-	- Write a file detailing duplicate order details
+	- If there is a jpeg and a tif file for every product type in an order, then process them
+		-- Add date acquired, and if the order was already marked complete then mark it a reshoot.
+	- If there isn't a jpeg and tif for every product type, then make a failure case
+		- Mark order incomplete
+	- Write a file detailing overlapping order details
 
 	Parameters:
 		order_form_path (str, PathLike): Path to the order form file (CSV format)
 		photo_dir_path (str, PathLike): Path to the directory of photos
 		target_dir (str, PathLike): Path to the target directory
+		copy (bool): copy or move
 
 	Returns:
 		Int: Number of files that were moved
 	Raises:
 		FileNotFoundError: If the photo directory or target directory does not exist.
 	'''
-	orders = extract_orders_from_order_form(order_form_path) # A list of Order objects, representing the orders from the order form
-	photo_files = [PhotoFile(fname) for fname in os.listdir(photo_dir_path) if os.path.isfile(os.path.join(photo_dir_path, fname))] # A list of PhotoFile objects, for all the filenames in the photo_dir_path
+	orders, photo_files = parse_source_data(order_form_path, photo_dir_path) # Lists (Order/Photofile objects) for all orders and photos in source data
 
-	# Variables to keep track of data to detect edge failure cases
-	unfulfilled_orders = [] # Keep track of any orders that didn't have the matching files to move
+	# PROCESS ORDERS
 	processed_files = {} # Keep track of what files have been moved, to catch if multiple orders are attempting to move the same files. processed_files: keys = the filename, values = a list of corresponding orders that match that file.
 
-	for order in orders: # For every order, search the filenames for matching files, and process them (only if a jpeg and tif are matched for every product type, otherwise it's a failure and don't process)
+	for order in orders: # For every order, search the filenames for matching files, and process them
 		matching_photos = []
-		found_match = False
 		for photofile in photo_files:
 			if photofile.matches_order(order):
 				matching_photos.append(photofile)
-		if order.every_match_present():
-			pass #TODO
 
-
-		if photofile.filename not in processed_files:
-			found_match = True
-			process_file(target_dir, photo_dir_path, order, photofile)
-			processed_files[photofile.filename] = [order] # list the processed file alongside the order that processed it
-		else: # file has already been processed by another order
-			processed_files[photofile.filename].append(order) # TODO, look down this path for files processed by multiple orders
-		if not found_match:
-			# TODO, update this to new method
-			unfulfilled_orders.append(order.to_csv_format())
+		if order.every_match_present(matching_photos): # Only process if a jpeg and tif are found for every product type, otherwise it's a failure
+			for photofile in matching_photos:
+				process_file(target_dir, photo_dir_path, order, photofile, copy)
+				processed_files.setdefault(photofile.filename,[]).append(order)
+			
+			order.update_order_details(completed=True, date=matching_photos[0].date) # All matching photos should have the same date, so just use the first one to get the relevant date
+		else:
+			order.update_order_details(completed=False)
 	
-	handle_edge_cases(unfulfilled_orders, processed_files, target_dir) # Deal with unfulfilled and duplicate orders # TODO, and files handled multiple times by different orders?
+	handle_order_overlap(processed_files, target_dir) # Deal with different orders that reference the same file(s)
+	Order.create_updated_orderform(orders = orders, old_order_form_path = order_form_path)
 	return len(processed_files)
 
 def attempt_process(
 	target_selection:FolderFileSelect,
 	photo_selection:FolderFileSelect,
 	order_form_selection:FolderFileSelect,
+	copy:bool,
 ) -> None:# Entry function called by main
 	'''
 	Attemps to process the order, and handles errors that occur in the process.
@@ -426,6 +460,7 @@ def attempt_process(
 		target_selection (FolderFileSelect, selection of a file path): Path to the target directory, where the files should be moved.
 		photo_selection (FolderFileSelect, selection of a file path): Path to the directory containing the photos.
 		order_form_selection (FolderFileSelect, selection of a file path): Path to the order form file (CSV format).
+		copy (bool): copy or move files.
 	'''
 	
 	### Extract the paths from the user interface ###
@@ -451,7 +486,7 @@ def attempt_process(
 
 	# Try to move the image files, display results and handle relevant exceptions/errors
 	try:
-		files_moved = parse_and_process_orders(order_form_path, photo_path, target_path)
+		files_moved = parse_and_process_orders(order_form_path, photo_path, target_path, copy)
 		if files_moved == 0:
 			tk.messagebox.showerror("No files moved.", "No matching files were found using the given order form and photo folder.")
 		else:
@@ -463,7 +498,7 @@ def attempt_process(
 		fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
 		print(exc_type, fname, exc_tb.tb_lineno)
 		print(exc_tb)
-		tk.messagebox.showerror("Error", f"Other error: {e}")
+		tk.messagebox.showerror("Error", f"Error message: {e}")
 
 if __name__ == "__main__":
 	# Initialize the user interface
@@ -481,9 +516,14 @@ if __name__ == "__main__":
 	order_form_selection = FolderFileSelect(gui, "Select the Order.csv", select_file=True)
 	order_form_selection.grid(row=2)
 
+	# Create a checkbox to mark if we want to move or copy the files
+	copy = tk.IntVar()  # Binary variable to store checkbox state
+	checkbox = ttk.Checkbutton(gui, text="Copy files", variable=copy)
+	checkbox.grid(row=3)
+
 	# Create a button to start the process
 	def start_process():
-		attempt_process(target_selection=target_selection, photo_selection=photo_selection, order_form_selection=order_form_selection)
+		attempt_process(target_selection=target_selection, photo_selection=photo_selection, order_form_selection=order_form_selection, copy=copy)
 
 	start_button = ttk.Button(gui, text="Move Image Files", command=start_process)
 	start_button.grid(row=4, column=0)
