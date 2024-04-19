@@ -1,2 +1,4 @@
 # photography plus sorter
 This program moves images from a source folder to a destination folder, sorted according to an order form
+A new updated order form is created by running this
+If the files are not available to move, then the order form will mention that those orders are incomplete
