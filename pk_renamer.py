@@ -144,36 +144,6 @@ class Order:
 		else:
 			self.data[CSV_cols.Order_status] = 'Incomplete'
 
-	def create_updated_orderform(orders:list, old_order_form_path:str):
-		'''
-		Writes all of the order objects out to a new order form, keeping the same order of columns as the input order form
-		- Determine a different name for the new order form to ensure no namespace conflicts
-		- Write the header then, one order at a time, write the data out following header order
-
-		Parameters:
-			orders (list of Order objects): List of all the orders the program has gone through
-			old_order_form_path (str, PathLike): Path to the original order form file (CSV format)
-		'''
-		# THIS CODE NO LONGER RELEVANT, AS THE PROGRAM JUST OVERWRITES THE ORDER FORM, INSTEAD OF CREATES A NEW ONE
-		# order_form_directory = os.path.dirname(old_order_form_path)
-		# old_filename = os.path.basename(old_order_form_path)
-		# # Determine filename of the updated orderform to avoid namespace conflicts
-		# name, ext = old_filename.split('.') 
-		# new_filename = name + '_processed' + '.' + ext
-		# new_destination = os.path.join(order_form_directory, new_filename)
-		# iterations = 0 # How many times a unique filename failed to generate
-		# while(os.path.exists(new_destination)):
-		# 	iterations += 1
-		# 	new_filename = name + '_processed' + str(iterations) + '.' + ext
-		# 	new_destination = os.path.join(order_form_directory, new_filename)
-		
-		# Write out the new order form
-		with open(old_order_form_path, mode='w', newline='') as file:
-			writer = csv.writer(file)
-			writer.writerow(Order.csv_header) # Output headers in the original order
-			for order in orders:
-				writer.writerow([order.data[header] for header in Order.csv_header]) # Write data in the header order
-	
 	def __eq__(self, other):
 		'''
 		- Compare two orders for equality.
@@ -266,7 +236,11 @@ class FolderFileSelect(tk.Frame):
 
 def write_logfile(location:str, content:str, name:str = f"logfile_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", warning:str = None):
 	'''
-	Writes a logfile at the given location, with the given content and filename
+	Writes a logfile 
+	- Located at: location
+	- Contains: content
+	- Called: name
+	- (optional) The GUI will notify the user that the logfile was created, with the message: warning
 	The name of the logfile is optional. If left unspecified it will be "logfile_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}"
 
 	Parameters:
@@ -280,55 +254,37 @@ def write_logfile(location:str, content:str, name:str = f"logfile_{datetime.now(
 		file.write(content)
 	if warning is not None: tk.messagebox.showerror(warning, f"Log file {name} created at {location}")
 
-def handle_order_overlap(processed_files:dict, target_dir:str):
+def handle_overlap_and_nomatches(renamed_files:dict, orders_without_matches:list, order_form_path:str):
 	'''
-	Handle any order overlap, if applicable
-	
-	- Detail image files that matched with multiple orders, and which orders those were
+	- Specify image files that matched with multiple orders, and which orders those were
+	- Specify orders with no matches
 	- Write details to logfile
 
 	Parameters:
-		processed_files (dict; key=processed filename, val = list of orders that matched that filename): 
-		target_dir (str, PathLike): Path to the target directory 
+		renamed_files (dict; key = filename, val = list of orders that matched that filename)
+		orders_without_matches (list of order objects without a match)
 	'''
-	# Notify if there were files matched by multiple orders
-	order_message = ''
-	for filename in processed_files:
-		if len(processed_files[filename]) > 1: # Multiple orders match to the file
-			order_message += f'The file {filename} was matched by multiple different orders. The following orders matched with the file:\n'
-			for order in processed_files[filename]:
-				order_message += f'\t{order}\n'
-	if len(order_message) > 0:
-		write_logfile(location=target_dir, name=f"Order_duplicates_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content=order_message, warning='Inidividual image files were matched with muiltiple orders')
+	error_message = ''
 
-def move_file(file_to_move:str, destination_dir:str, filename:str, copy:bool = False):
-	'''
-	Move or copy the file to the destination directory (new filename may be different than old)
-	Edit filename if name conflicts exist in destination directory
+	# Notify if there were files matched by multiple orders (overlap)
+	for filename in renamed_files:
+		if len(renamed_files[filename]) > 1: # Multiple orders match to the file
+			error_message += f'The file {filename} was matched by multiple different orders. The following orders matched with the file:\n'
+			for order in renamed_files[filename]:
+				error_message += f'\t{order}\n'
+			error_message += f'\n'
+	
+	# Notify of orders without matches
+	if len(orders_without_matches) > 0:
+		error_message += f'The following orders had no matching images:\n'
+		for order in orders_without_matches:
+			error_message += f'\t{order}\n'
+		error_message += f'\n'
 
-	Parameters:
-		file_to_move (str, PathLike): Path to the file that will be moved
-		destination_dir (str, PathLike): Path to the destination directory
-		filename (str): What to name the file when it's moved
-		copy (bool): Determines to copy or move the file
-	'''
-	destination = os.path.join(destination_dir, filename) # destination is the destination directory + filename
+	if len(error_message) > 0:
+		write_logfile(location=order_form_path, name=f"Orderform_errors_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content=error_message, warning='Warning: orders found without a match, or overlapping matches')
 
-	# Edit filename if name conflicts exist in destination directory
-	renamed = False
-	oldname = filename
-	while(os.path.exists(destination)): # If filename already exists in the destination directory, use a modified name 
-		filename = f'name_conflict_{filename}'
-		destination = os.path.join(destination_dir, filename)
-		renamed = True
-	if renamed:
-		tk.messagebox.showerror("Name conflict", f'File already exists: {oldname} already exists in {destination_dir}. Ranaming to "{filename}", so the file can be processed')
-
-	# Now just move/copy the file
-	if not os.path.exists(destination_dir): os.makedirs(destination_dir) # Ensure the destination directory exists
-	shutil.copy2(file_to_move, destination) if copy else shutil.move(file_to_move, destination)
-
-def process_file(target_dir:str, photo_dir_path:str, order:Order, photofile:PhotoFile, copy:bool):
+def rename_file(target_dir:str, photo_dir_path:str, order:Order, photofile:PhotoFile, copy:bool):
 	'''
 	Process file according to instructions
 	- Determine the destination directory (up to date algorithm goes here), and new name (if applicable); from the order and filename information
@@ -398,35 +354,28 @@ def parse_source_data(order_form_path:str, photo_dir_path:str) -> tuple:
 def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir:str, copy:bool) -> int:
 	'''
 	Parses the order form, searches the photo directory for matches
-	Makes sure theres a jpeg and tif match for every product type.
-	Processes matches according to the specific algorithm
-	Handles edge cases (orders with no matches, or unfulfilled orders) and creates relevant files about them in the target directory.
-	Returns the number of files that were moved
+	Renames matches
+	Handles edge cases (orders with no matches, or unfulfilled orders)
+	Returns the number of files that were renamed
 
 	- Create a list of orders from the order form
 	- Create a list of photo filenames in the photo directory
 	- For every order, find the photo filenames from the list that match
-	- If there is a jpeg and a tif file for every product type in an order, then process them
-		-- Add date acquired, and if the order was already marked complete then mark it a reshoot.
-	- If there isn't a jpeg and tif for every product type, then make a failure case
-		- Mark order incomplete
-	- Write a file detailing overlapping order details
 
 	Parameters:
 		order_form_path (str, PathLike): Path to the order form file (CSV format)
 		photo_dir_path (str, PathLike): Path to the directory of photos
-		target_dir (str, PathLike): Path to the target directory
-		copy (bool): copy or move
 
 	Returns:
-		Int: Number of files that were moved
+		Int: Number of files that were renamed
 	Raises:
 		FileNotFoundError: If the photo directory or target directory does not exist.
 	'''
 	orders, photo_files = parse_source_data(order_form_path, photo_dir_path) # Lists (Order/Photofile objects) for all orders and photos in source data
 
 	# PROCESS ORDERS
-	processed_files = {} # Keep track of what files have been moved, to catch if multiple orders are attempting to move the same files. processed_files: keys = the filename, values = a list of corresponding orders that match that file.
+	renamed_files = {} # Keep track of what files have been renamed, to catch if multiple orders are attempting to move the same files. renamed_files: keys = the filename, values = a list of corresponding orders that match that file.
+	orders_without_matches = []
 
 	for order in orders: # For every order, search the filenames for matching files, and process them
 		matching_photos = []
@@ -434,18 +383,14 @@ def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir
 			if photofile.matches_order(order):
 				matching_photos.append(photofile)
 
-		if order.every_match_present(matching_photos): # Only process if a jpeg and tif are found for every product type, otherwise it's a failure
-			for photofile in matching_photos:
-				process_file(target_dir, photo_dir_path, order, photofile, copy)
-				processed_files.setdefault(photofile.filename,[]).append(order)
-			
-			order.update_order_details(completed=True, date=matching_photos[0].date) # All matching photos should have the same date, so just use the first one to get the relevant date
-		else:
-			order.update_order_details(completed=False)
+		if len(matching_photos) == 0: orders_without_matches.append(order) # Identify orders without matches
+
+		for photofile in matching_photos:
+			rename_file(photofile) # Rename the file, if file is already renamed then skip over it
+			renamed_files.setdefault(photofile.filename,[]).append(order)
 	
-	handle_order_overlap(processed_files, target_dir) # Deal with different orders that reference the same file(s)
-	Order.create_updated_orderform(orders = orders, old_order_form_path = order_form_path)
-	return len(processed_files)
+	handle_overlap_and_nomatches(renamed_files, orders_without_matches, order_form_path)
+	return len(renamed_files)
 
 def attempt_process(
 	photo_selection:FolderFileSelect,
@@ -456,18 +401,17 @@ def attempt_process(
 	- Checks the validity of the selections, returning if invalid
 	- Attempts to rename based on the orders
 		-- Call "parse_and_process_orders"
-			-- Reads the order form (order_form_selection), and process each order from photos inside the photo directory (photo_selection)
-			-- Returns the number of photos moved
-	- Displays results from attempting to fulfill the orders
-		-- Error if no files were moved
-		-- Sucess if files were moved, along with how many were moved
+			-- Reads the order form (order_form_selection), and makes a list of orders
+			-- renames every photo that matches an order
+			-- Returns the number of photos renamed
+	- Displays results from attempting to rename
+		-- Error if no files were renamed
+		-- Sucess if files were renamed, along with how many were renamed
 	- Exceptions that are thrown during the process are caught here
 
 	Parameters:
-		target_selection (FolderFileSelect, selection of a file path): Path to the target directory, where the files should be moved.
 		photo_selection (FolderFileSelect, selection of a file path): Path to the directory containing the photos.
 		order_form_selection (FolderFileSelect, selection of a file path): Path to the order form file (CSV format).
-		copy (bool): copy or move files.
 	'''
 	
 	### Extract the paths from the user interface ###
