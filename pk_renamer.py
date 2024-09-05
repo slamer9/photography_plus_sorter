@@ -284,57 +284,36 @@ def handle_overlap_and_nomatches(renamed_files:dict, orders_without_matches:list
 	if len(error_message) > 0:
 		write_logfile(location=order_form_path, name=f"Orderform_errors_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content=error_message, warning='Warning: orders found without a match, or overlapping matches')
 
-def rename_file(target_dir:str, photo_dir_path:str, order:Order, photofile:PhotoFile, copy:bool):
+def rename_file(photofile:PhotoFile, order:Order, photo_dir_path:str):
 	'''
-	Process file according to instructions
-	- Determine the destination directory (up to date algorithm goes here), and new name (if applicable); from the order and filename information
-	- Move/copy the file to the destination directory
+	Rename file
+	- change files from [Date]_[Customer]_[Farm]_[FieldName]_[Product].[extension] to [Date]_[Customer]_[Farm]_[FieldName]_[Product]_p[pk].[extension]
+		-- Do this by just adding "_p[pk]" to the end of the filename before the extention
+		-- If the filname already has a "p" on the last section, then assume it's already renamed and ignore it
 
-	Parameters:
-		target_dir (str, PathLike): Path to the target directory
+	Parameters: TODO
 		photo_dir_path (str, PathLike): Path to the photo directory
 		order (Order object): Relevant data from the order form
 		photofile (PhotoFile object): Relevant data from the filename
-		copy (bool): Copy or move files
 
 	Raises:
 		FileNotFoundError: If the photo directory or target directory does not exist.
-
-	NOTE
-	-This function moves files based on a specific algorithm dependent on the filenames of the images, and an order form. If the filenames, or order form, changes, the algorithm may no longer work
-	-This algorithm expects file names in the form of subfields separated by underscores: [Date]_[Customer]_[Farm]_[FieldName]_[Product].[extension]
-		-- The extension is expected to be either 'tif' or 'jpg'
-		-- Subfields can also have underscores '_' in them (ie, if the customer is two words then they will be separated by '_')
-	- The order form is a csv, where every row is an order with the column names formatted as found in CSV_cols. (Only FieldName, Crop, Customer, Farm, and Manager are used by the current algorithm, the others don't necessarily need to match that format for this function)
 	'''
-	# TODO make something persistent if this fails midway through, to notify if some files were moved before program failure.
-	### Get relevant information from the photo_filename ###
-	photo_filename = photofile.filename
-	original_img_path = os.path.join(photo_dir_path, photo_filename) # get the path where the image is right now
-	product = photofile.product
-	if product in PRODUCT_NAME_TRANSLATIONS: product = PRODUCT_NAME_TRANSLATIONS[product]
 	
-	### Determine the destination directory of files, and change the photo_filename if needed. Up to date algorithm here ###
-	if order.data[CSV_cols.customer] == 'RD Offutt': # Everything goes to Anderson Geographics, JPGs also go to RD Offutt
-		if photofile.ext == 'jpg': # Copy JPGs to RD Offutt
-			farm = '3 Mile' if order.data[CSV_cols.farm] == 'Inland' else order.data[CSV_cols.farm]
-			destination_dir = os.path.join(target_dir, order.data[CSV_cols.customer], farm, order.data[CSV_cols.manager], order.data[CSV_cols.crop], product)
-			move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename, copy = True) # An additional copy is moved to this location, which is why move_file is being called here and down below.
-		destination_dir = os.path.join(target_dir, 'Anderson Geographics', TIF_FOLDER_NAME if photofile.ext == 'tif' else JPG_FOLDER_NAME)
-		photo_filename = f"{photofile.date}_{order.data[CSV_cols.field_name].replace(' ','_')}_{photofile.product}.{photofile.ext}"
-	elif (order.data[CSV_cols.customer] == 'Agri NW' or order.data[CSV_cols.customer] == 'Washington Onion' or order.data[CSV_cols.customer] == 'Paterson Ferry') and photofile.ext == 'tif':
-		destination_dir = os.path.join(target_dir, 'Agri Server', order.data[CSV_cols.farm])
-	elif order.data[CSV_cols.customer] == 'Canyon Falls':
-		if photofile.ext == 'tif':
-			destination_dir = os.path.join(target_dir, 'Canyon Falls Server')
-		else:
-			destination_dir = os.path.join(target_dir, order.data[CSV_cols.customer], order.data[CSV_cols.manager], order.data[CSV_cols.farm], order.data[CSV_cols.crop], product)
-	else: # Not a special case
-		destination_dir = os.path.join(target_dir, order.data[CSV_cols.customer], order.data[CSV_cols.farm], order.data[CSV_cols.manager], order.data[CSV_cols.crop], product)
-		if photofile.ext == 'tif': destination_dir = os.path.join(destination_dir, TIF_FOLDER_NAME)
-		
-	### Now that destination_dir is determined, move the file ###
-	move_file(file_to_move=original_img_path, destination_dir=destination_dir, filename=photo_filename, copy=copy)
+	# Determine pk_name
+	pk_name = ''
+	name, ext = photofile.filename.split('.')
+	last_section_of_name = name.split('_')[-1]
+
+	if last_section_of_name.startswith('p'): # Filename is already the pk name, do nothing
+		return
+	else:	# Create pk name and return it
+		pk_name = name + '_p' + f'{order.data[CSV_cols.pk]}' + '.' + ext
+
+	# Rename file to the pk_name
+	old_filename = os.path.join(photo_dir_path, photofile.filename)
+	new_filename = os.path.join(photo_dir_path, pk_name)
+	os.rename(old_filename, new_filename)
 
 def parse_source_data(order_form_path:str, photo_dir_path:str) -> tuple:
 	'''
@@ -351,7 +330,7 @@ def parse_source_data(order_form_path:str, photo_dir_path:str) -> tuple:
 	photo_files = [PhotoFile(fname) for fname in os.listdir(photo_dir_path) if os.path.isfile(os.path.join(photo_dir_path, fname))] # A list of PhotoFile objects, for all the filenames in the photo_dir_path
 	return (orders, photo_files)
 
-def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir:str, copy:bool) -> int:
+def parse_and_process_orders(order_form_path:str, photo_dir_path:str) -> int:
 	'''
 	Parses the order form, searches the photo directory for matches
 	Renames matches
@@ -386,7 +365,7 @@ def parse_and_process_orders(order_form_path:str, photo_dir_path:str, target_dir
 		if len(matching_photos) == 0: orders_without_matches.append(order) # Identify orders without matches
 
 		for photofile in matching_photos:
-			rename_file(photofile) # Rename the file, if file is already renamed then skip over it
+			rename_file(photofile, order, photo_dir_path) # Rename the file, if file is already renamed then skip over it
 			renamed_files.setdefault(photofile.filename,[]).append(order)
 	
 	handle_overlap_and_nomatches(renamed_files, orders_without_matches, order_form_path)
