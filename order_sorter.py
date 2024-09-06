@@ -192,7 +192,7 @@ class Order:
 		"""
 		Return a string representation of the Order object.
 		"""
-		print(self.data)
+		return(str(self.data))
 
 # PhotoFile class to make sure that photo filenames are read in a standarized way
 class PhotoFile:

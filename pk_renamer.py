@@ -163,7 +163,7 @@ class Order:
 		"""
 		Return a string representation of the Order object.
 		"""
-		print(self.data)
+		return(str(self.data))
 
 # PhotoFile class to make sure that photo filenames are read in a standarized way
 class PhotoFile:
@@ -282,7 +282,7 @@ def handle_overlap_and_nomatches(renamed_files:dict, orders_without_matches:list
 		error_message += f'\n'
 
 	if len(error_message) > 0:
-		write_logfile(location=order_form_path, name=f"Orderform_errors_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}", content=error_message, warning='Warning: orders found without a match, or overlapping matches')
+		write_logfile(location=os.path.dirname(order_form_path), name=f"Orderform_errors_{datetime.now().strftime('%Y_%m_%d_%H_%M_%S')}.txt", content=error_message, warning='Warning: orders found without a match, or overlapping matches')
 
 def rename_file(photofile:PhotoFile, order:Order, photo_dir_path:str):
 	'''
@@ -291,7 +291,7 @@ def rename_file(photofile:PhotoFile, order:Order, photo_dir_path:str):
 		-- Do this by just adding "_p[pk]" to the end of the filename before the extention
 		-- If the filname already has a "p" on the last section, then assume it's already renamed and ignore it
 
-	Parameters: TODO
+	Parameters:
 		photo_dir_path (str, PathLike): Path to the photo directory
 		order (Order object): Relevant data from the order form
 		photofile (PhotoFile object): Relevant data from the filename
